@@ -7,24 +7,25 @@ library(tidyr)
 library(ggplot2)
 library(rlist)
 
-data <- read.csv("./crime.csv")
+data <- read.csv('./BostonCrime/crime.csv', sep = ",", na.strings =c('','NA','na','N/A','n/a','NaN','nan'), strip.white = TRUE, stringsAsFactors = FALSE)
 
 ############### CLEANING ###############
 
 #The shooting column
 count <- 0
 for (x in data$SHOOTING) {
-  if (x == 'Y') {
+  if (is.na(x) == TRUE) {
     count = count + 1
   }
 }
 count
+#So there are 326765 NA's where they should be N's
 
 #Create new list assigning to N to empty obs
 new_shooting <- c()
 
 for (x in data$SHOOTING) {
-  if (x != 'Y') {
+  if (is.na(x) == TRUE) {
     new_shooting <- c(new_shooting, 'N')
   } else {
     new_shooting <- c(new_shooting, x)
@@ -33,47 +34,110 @@ for (x in data$SHOOTING) {
 
 data$Shooting <- new_shooting
 data$SHOOTING <- NULL
-data <- data %>% rename(LAT = Lat, LONG = Long, LOCATION = Location, SHOOTING = Shooting)
+data <- data %>% rename(SHOOTING = Shooting)
 data <- data %>% rename(LAT = Lat, LONG = Long, LOCATION = Location)
 
 #How may NA's in the dataset
 sum(is.na(data))
 
 #Per column if you so wish
+#These are the columns that contain NA's, unsure of what to do
+sum(is.na(data$REPORTING_AREA))
+sum(is.na(data$LAT))
+sum(is.na(data$LONG))
 
-#sum(is.na(data$INCIDENT_NUMBER))
-#sum(is.na(data$OFFENSE_CODE))
-#sum(is.na(data$OFFENSE_CODE_GROUP))
-#sum(is.na(data$OFFENSE_DESCRIPTION))
-#sum(is.na(data$DISTRICT))
-#sum(is.na(data$REPORTING_AREA))
-#sum(is.na(data$OCCURRED_ON_DATE))
-#sum(is.na(data$YEAR))
-#sum(is.na(data$MONTH))
-#sum(is.na(data$DAY_OF_WEEK))
-#sum(is.na(data$HOUR))
-#sum(is.na(data$UCR_PART))
-#sum(is.na(data$STREET))
-#sum(is.na(data$LAT))
-#sum(is.na(data$LONG))
-#sum(is.na(data$LOCATION))
-#sum(is.na(data$SHOOTING))
+#Summary view of missing data
+#Problem area's are LAT, LONG (thus LOCATION), and REPORTING AREA
+missing_data <- sort(sapply(data, function(x) sum(is.na(x))), decreasing = TRUE)
+
+#Convert district code to district name
+#Codes are uninformative
+dist_names <- c()
+for (x in data$DISTRICT) {
+  if (is.na(x)) {
+    dist_names <- c(dist_names, NA)
+  } else if (x == "A1") {
+    dist_names <- c(dist_names, "Downtown")
+  } else if (x == "A15") {
+    dist_names <- c(dist_names, "Charlestown")
+  } else if (x == "A7") {
+    dist_names <- c(dist_names, "East_Boston")
+  } else if (x == "B2") {
+    dist_names <- c(dist_names, "Roxbury")
+  } else if (x == "B3") {
+    dist_names <- c(dist_names, "Mattapan")
+  } else if (x == "C6") {
+    dist_names <- c(dist_names, "South_Boston")
+  } else if (x == "C11") {
+    dist_names <- c(dist_names, "Dorchester")
+  } else if (x == "D4") {
+    dist_names <- c(dist_names, "South_End")
+  } else if (x == "D14") {
+    dist_names <- c(dist_names, "Brightdown")
+  } else if (x == "E5") {
+    dist_names <- c(dist_names, "West_Roxbury")
+  } else if (x == "E13") {
+    dist_names <- c(dist_names, "Jamaica_Plain")
+  } else if (x == "E18") {
+    dist_names <- c(dist_names, "Hyde_Park")
+  }
+}
+
+data$DISTRICT <- NULL
+data$DISTRICT <- dist_names
 
 ############### EXPLORATORY DATA ANALYSIS ##################
 
 #Number of Crimes for each year
 no_crimes <- ggplot(data, aes(YEAR)) +
-  geom_bar(fill = "#0073C2FF") 
+  geom_bar() 
 no_crimes
 
-#Number of Distince Crimes
+#Number of Distinct Crimes
 length(unique(data$OFFENSE_CODE_GROUP))
 
 #The different crimes
 unique(data$OFFENSE_CODE_GROUP)
 
-#Crimes per year per offense group 
+#Crimes per offense group 
 cpy <- data %>%
   group_by(OFFENSE_CODE_GROUP) %>%
   summarize(n())
 cpy
+
+#Crimes per District per year
+data %>%
+  group_by(YEAR, DISTRICT) %>%
+  summarize(count = n()) %>% 
+  ggplot(aes(x = YEAR, y = count)) +
+  geom_bar(stat = "identity") +
+  facet_wrap(~DISTRICT)
+
+#Shootings per District per year
+data %>% 
+  filter(SHOOTING == "Y") %>%
+  group_by(YEAR, DISTRICT) %>%
+  summarise(count = n()) %>%
+    ggplot(aes(x = (DISTRICT), y = count, color = DISTRICT)) + 
+    geom_bar(stat = "identity") +
+    facet_wrap(~YEAR)
+
+#Robberies per year in Boston
+data %>%
+  filter(OFFENSE_CODE_GROUP == "Robbery") %>%
+  group_by(YEAR) %>%
+  summarise(count = n()) %>%
+  ggplot(aes(x = YEAR, y = count)) +
+  geom_line()
+
+#Robberies per district per year
+data %>%
+  filter(OFFENSE_CODE_GROUP == "Robbery") %>%
+  group_by(YEAR, DISTRICT) %>%
+  summarise(count = n()) %>%
+  ggplot(aes(x = YEAR, y = count)) +
+  geom_line() +
+  facet_wrap(~DISTRICT)
+  
+
+
