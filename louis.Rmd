@@ -10,7 +10,7 @@ Try executing this chunk by clicking the *Run* button within the chunk or by pla
 ```{r}
 require(stringr)
 library(ggmap)
-register_google(key = "AIzaSyBLCdND-pNaDYyJztl_ENII_GJ5Lp4scYs")
+register_google(key = "")
 ```
 
 ```{r}
