@@ -1,0 +1,632 @@
+---
+title: "The Use of Measurements in Different Graph Contexts"
+author: 'Group 1 : Dream Team'
+date: "29/08/2019"
+output:
+  html_document:
+    df_print: paged
+    highlight: textmate
+    theme: spacelab
+    toc: yes
+    toc_depth: 3
+    toc_float: yes
+  pdf_document:
+    toc: yes
+    toc_depth: '3'
+---
+
+```{r setup, include=FALSE}
+knitr::opts_chunk$set(echo = TRUE)
+```
+
+# R Tutorial 
+
+```{r warning=FALSE, include=FALSE}
+library(igraph)
+library(tidygraph)
+library(igraphdata)
+library(dplyr)
+library(ggraph)
+library(sna)
+```
+
+
+This tutorial is built on the assumption that you currently have a dataset and would like to apply a specific measures on it. 
+To follow the flow of this tutorial please refer to the table of contents.
+
+The different graph types that will be coverd in this tutorial includes: 
+
+ * Simple
+ * Directed
+ * Undirected
+ * Bipartite/multimodal
+ * Multigraph
+
+ The tutorial will look at three different measures:
+ 
+ 1. Node Measurements
+ 2. Community Measurements
+ 3. Graph Measurements
+ 
+**A summary of each measurement will be found at the end of each section.**
+
+# Getting Started
+Tips and tricks with regrads to formatting graphs.
+
+## Load Data Sets
+```{r echo=TRUE}
+# Simple
+simple_graph_small <- as_tbl_graph(sample_gnp(10, 5/10, directed = TRUE))
+simple_graph_large <- as_tbl_graph(sample_gnp(100, 5/100, directed = TRUE))
+
+# Bipartite
+m = matrix(data = sample(0:1, 25, replace = TRUE), nrow = 5, ncol = 5)
+colnames(m) = c("A", "B", "C", "D", "E")
+rownames(m) = c("Costa", "Starbucks", "Cafe2U", "Petes", "Philz")
+# Convert it to a bipartitie network
+bipartite_graph = as_tbl_graph(igraph::graph.incidence(m))
+bipartite_graph_small <- as_tbl_graph(create_bipartite(10, 5, directed = TRUE, mode = "out"))
+
+# Multigraphs
+data(Koenigsberg)
+multi_graph_small <- as_tbl_graph(Koenigsberg)
+data(USairports) 
+multi_graph_large <- as_tbl_graph(USairports)
+```
+
+## Morphing and Unmorphing
+Depending on the algorithm used, graphs will need to be in a certain format. Methods like the Louvain detection algorithm requires a graph to be undirected. The morph/unmorph verbs are used to create temporary representations of the graph, such as e.g. its search tree or a subgraph. A morphed graph will accept any of the standard dplyr verbs, and changed to the data is automatically propagated to the original graph when unmorphing. Tidygraph comes with a range of morphers a demonstrated below:
+
+```{r warning=FALSE, comment=NA}
+simple_graph_small %>%
+  convert(to_undirected)
+
+#OR
+
+simple_graph_small %>%
+  morph(to_undirected)%>%
+  mutate(
+    deg = centrality_degree()
+  )%>%
+  unmorph()
+```
+As seen in the code snippet above, the `convert` function transforms the graph permanently to the desired format, but can't be transformed back. If you only want to temporarily convert it, you can use the `morph` function.
+
+*It should be noted that when converting a direct graph to a undirected graph, the graph format is changed to a multi-graph.*
+
+This can be converted back to the original format by using the `to_simple()` function. Both the converted and 'morphed + unmoprhed' have the same degree result but the graph that has been unmoprhed is back into its original state of a multigraph while the other has been fully converted to a simple graph. *see below*
+```{r include=FALSE}
+example_original<- multi_graph_small %>%
+  mutate(
+    deg = centrality_degree()
+  )
+
+example_morph <- multi_graph_small %>%
+  morph(to_simple)%>%
+  mutate(
+    deg = centrality_degree()
+  )%>%
+  unmorph()
+
+example_convert <- multi_graph_small %>%
+  convert(to_simple)%>%
+  mutate(
+    deg = centrality_degree()
+  )
+```
+
+```{r comment=NA}
+example_original[] #original matrix
+example_morph[] #back to orginial with morph and unmorph
+example_convert[] #permanently simple
+```
+
+
+
+# Node Measurements
+## Degree Centrality
+
+Degree centrality is a simple count of the total number of connections linked to a vertex. It can be thought of as a kind of popularity measure, but it does not recognize a difference between quantity and quality of the connection.
+
+**Degree centrality will work in big and small networks.**
+
+For **directed** graphs (no matter graph context), there are two measures of degree. In-degree is the number of connections that point inward at a vertex. Out-degree is the number of connections that originate at a vertex and point outward to other vertices. The sum of the in-degree and out-degree will equal the total degree of the vertex.
+```{r directed_degree , comment=NA}
+simple_graph_small %>% 
+    mutate(# apply functions on the node level using mutate
+      deg = centrality_degree(mode = "all"), # calculate degree
+      indeg = centrality_degree(mode = "in"), # calculate indegree
+      outdeg = centrality_degree(mode = "out"),# calculate outdegree
+    )
+```
+
+For **undirected** graphs (no matter graph context), in and out-degree will not exist as there is no direction of flow. One can still calculate the degree, but whether the degree points move inward or outward will not available. (If you calculate the in-degree and out-degree for an undirected graph it will just return the total degree)
+```{r undirected_degree, comment=NA}
+simple_graph_small %>%
+  convert(to_undirected) %>% #Change the graph to undirected
+    mutate(# apply functions on the node level using mutate
+      deg = centrality_degree(mode = "all"), # calculate degree
+      indeg = centrality_degree(mode = "in"), # calculate indegree
+      outdeg = centrality_degree(mode = "out"), # calculate outdegree
+    )
+```
+*Here you can see that the in and out-degree is the same as the degree.*
+
+For **Multigraphs**, there exists multiple connection between the same nodes within a network. This will result in the degree centrality to be higher than it actually is.
+This is due to: 
+
+>“The degree can be interpreted in terms of the immediate risk of a node for catching whatever is flowing through the network (such as a virus, or some information).” 
+
+Thus if Kneiphof is connected to Vorstadt 2 times that shouldn’t increase their degree centrality. But if you pass this multigraph into a centrality-degree function it’ll give Kneiphof a higher centrality as it’ll assume it is connected to 2 nodes. *as seen below:*
+
+```{r multigraph_plot, echo=FALSE,fig.align='center', out.width='50%' }
+plot(multi_graph_small)
+```
+The degree centrality for Kneiphof here will be 5.  
+
+To avoid this, you can `convert` (or morph) the dataset in a simple graph. Then you can calculate the degree as usual. Another option will be to calculate the neighbours of the node with a step of 1. This will return the same result as simplifying the multigraph.
+```{r simplify_graph, comment=NA}
+multi_graph_small %>% 
+  convert(to_simple) %>% # Convert to simple graph
+    mutate(# apply functions on the node level using mutate
+      deg = centrality_degree(mode = "all") # calculate degree
+    )
+```
+*As you can see the degree centrality for Kneiphof is now 3 and not 5.*
+
+
+## Eigenvector
+
+Eigenvector centrality is a basic extension of degree centrality. Eigenvector centrality measures a node’s importance while giving consideration to the importance of its neighbors. The use of Eigen is that it identifies that links from important nodes (as measured by degree centrality) are worth more than links from unimportant nodes.
+
+**Example of how you would use Eigenvector results:**
+Say you have railway data that shows each railway and each trainstation in a given train-route-system. Each railway route runs through specific trainstations. Assuming each station is a node and each railway route is an edge, one could work out the Eigenvector for each trainstation. The trainstation with the highest Eighenvector will be the one with the most railway routes running through it, and thus it'll be a higher risk of causing major delays to the overall train-route-system if something had to go wrong their. In this case identifiying the eigenvector can help you determine where extra train stations could potentially be placed to lower eigenvalues and so lower risk.
+ 
+An example of usage:
+```{r comment=NA}
+simple_graph_small %>% # Simple directed graph
+  convert(to_undirected) %>% # Convert it to an undirected graph
+  mutate(
+    eigen = centrality_eigen() # Calculate eigen centrality
+  )
+```
+Eigen vector is compatible for large and small, directed and undirected networks and could be computed for simple graphs, multi graphs and bipartite graphs. 
+
+Bipartite graphs does not consider any direction. Thus, direction is ignored in calculating the eigenvector centrality of bipartite graphs.
+
+There are, however, things that need to be accounted for in directed graphs:
+Eigen_centrality will not symmetrize your data before extracting eigenvectors. Thus, don't send this function asymmetric (Directed) matrices unless you really mean to do so.
+
+
+## Pagerank
+
+PageRank can be summarised as follows:
+A node is important if it's linked from other important nodes or if it is highly linked.
+
+Example of usage:
+```{r comment=NA}
+multi_graph_small %>% # Simple directed graph
+  mutate(
+    page_rank = centrality_pagerank() # Calculate eigen centrality
+  )
+```
+PageRank works for simple graphs, bipartite graphs and multigraphs (regardless of the size of the network). PageRank is defined for directed graphs, but in some special cases applications for undirected graphs occur. 
+
+PageRank is similar to the Katz and Centrality Degree measures, but differs in some aspects. As per Google's algorithm that uses PageRank, it displays nodes that are most visited. In a directed network, it would produce the most accurate results, as the links that go to each node is known, it will determine the most central node. The algorithm will work on undirected networks, but will be more accurate in a directed network, as the algorithm can rank nodes according to how many links the nodes receives.
+
+## Authorities and Hubs
+
+One is called a hub score and the other is an authority score. For any query, we compute two ranked lists of results rather than one. The ranking of one list is induced by the hub scores and that of the other by the authority scores.
+In simple terms when looking at Google Page a hub page would contain a list of links that point towards the authority page. The authority page is the page that all the hub pages refer to.
+
+This node measure is compatible with all graph types except bipartite and undirectional edges. This will result in the hub scrore and authority will be exactly the same. Bipartite graphs by nature are undirected but simple graphs and multi graphs can be converted/morhped into directed graphs to achieve more confident results. 
+
+Example of usage:
+```{r comment=NA}
+simple_graph_small %>% # the dataset already converted to tidygraph
+  mutate(# apply functions on the node level using mutate
+    auth = centrality_authority(), # calculate the authority score
+     hub = centrality_hub() #calculate the hub score
+  )
+```
+
+## Closeness Centrality
+
+In a connected graph, the normalized closeness centrality (or closeness) of a node is the average length of the shortest path between the node and all other nodes in the graph. Thus the more central a node is, the closer it is to all other nodes.
+
+Example of usage:
+```{r comment=NA}
+simple_graph_small %>% 
+    mutate( # apply functions on the node level using mutate
+     cl = centrality_closeness() # calculate Closeness
+    )
+```
+Closeness centrality works for simple graphs, bipartite graphs and multigraphs (regardless of the size of the network).
+
+Closeness centrality is not well-defined for disconnected graphs. Taking distances from or to all other nodes is irrelevant in undirected graphs, whereas it can produce totally different results in directed graphs. For example, a website can have a high closeness centrality from outgoing link, but low closeness centrality from incoming links.
+
+## Betweeness Centrality 
+
+A node’s betweeness centrality is the number of times a node acts as a bridge along the shortest path between two other nodes. Betweenness centrality is a way of detecting the amount of influence a node has over the flow of information in a graph. It is often used to find nodes that serve as a bridge from one part of a graph to another. The higer the betweeness centrality the more influnce this node has on the shorter paths.
+
+Betweeness Centrality is calculated by:
+For each pair of nodes, compute the shortest paths between them.
+For each pair of nodes, determine the fraction of shortest paths through the node in question.
+Sum this fraction over all pairs of nodes.
+
+Example of usage:
+```{r comment=NA}
+bipartite_graph %>% # the enron dataset is in igraph format
+  mutate(# apply functions on the node level using mutate
+    between = centrality_betweenness() # calculate eigenvector
+  )
+```
+
+Betweeness centrality is compatible with a large or small simple/multi graphs, regardless if it is directed or indirected.
+
+Please note that changing a bipartite graph to a directed graph will change the graph into acyclic graph resulting in betweeness of 0.
+
+## Summary 
+
+1 = yes, you can apply this measure in the given context
+
+0 = no, you can't 
+
+`ABC*` = Specific note about that case *see notes under table for more info*
+
+`A*`: One can still calculate the degree,but not in-degree and out-degree
+
+`B*`: Measuring degree centrality can be done on multi graph, but it depends on whether you want to take the weight of the multigraph into account. If so, you will measure the degree centrality as normal. If not, you can simplify the graph and calculate the degree centrality. 
+
+`C*`: Please note that changing a bipartite graph to a directed graph will change the graph into acyclic graph resulting in betweenness of 0.
+
+`D*`: Undirected graphs and Bipartite graphs return the same result for hub score and authority score.
+
+`E*`: More accurate for defined directed graphs, but works on undirected graphs too.
+
+
+
+
+***
+
+# Community Measurements
+The next section will focus on the different community detection algorithms, and how they work best in certain situations and graph contexts.
+
+## Louvain Community Detection 
+
+**Only works on undirected graphs**
+As louvain is seen as the most popular community detection algorithm, it only works on undirected multi graphs (but all graphs contexts - bipartite, simple and multi) - which is beneficial for large datasets. It works on smaller datasets too, but there are more accurate algorithms that do this better in this case.
+
+It was tested on a couple of datasets, both big and small, and prodoced consistent results. Louvain is best suited on larger datasets, while other algorithms provide results that are similar, louvain is faster and more responsive than them, which makes it easier to produce communities.
+The reason it does not work on directed graphs is because multi level community detection cannot compute modularity for directed networks.
+
+Examples are shown below for bipartite, simple and multi-graphs on large datasets, which was tested with the Louvain community detection algorithm.
+```{r}
+#Bipartite graph dataset
+bipartite_louvain <- bipartite_graph %>%
+  convert(to_undirected) %>%
+  mutate(louvain = group_louvain())
+
+#Big simple graph dataset
+simple_louvain_big <- simple_graph_large %>%
+  convert(to_undirected) %>%
+  mutate(louvain = group_louvain())
+
+#Big multi-graph dataset
+multi_louvain_big <- multi_graph_large %>%
+  convert(to_undirected) %>%
+  mutate(louvain = group_louvain())
+
+```
+
+## Lable Propagation Community Detection
+This algorithm uses labels to propagate unlabled datasets, and assign these lables to communities. It tries to find previously labled data, and adapt the unlabled data to labels.
+It only works on undirected graphs, but works on all graph contexts. It also computes on large and small datasets.
+The reason it only works on undirected graphs is because of the nature of the algorithm and how it assigns labels to nodes. It will not work if the network is directed, because a label can be itirated over and over again, and be assigned to a different node.
+
+Examples are found below for bipartite, simple and multi-graphs on large datasets, which was tested with the Lable Propogation community detection algorithm.
+```{r}
+#Bipartite graph dataset
+bipartite_lable <- bipartite_graph %>%
+  convert(to_undirected) %>%
+  mutate(lable = group_label_prop())
+
+#Big simple graph dataset
+simple_lable_big <- simple_graph_large %>%
+  convert(to_undirected) %>%
+  mutate(lable = group_louvain())
+
+#Big multi-graph dataset
+multi_lable_big <- multi_graph_large %>%
+  convert(to_undirected) %>%
+  mutate(lable = group_louvain())
+
+```
+
+## InfoMap Community Detection
+InfoMap uses random short walks to calculate the probability that a node will be visited.
+
+This algorithm works for both directed and undirected graphs, but only implements modularity for undirected graphs. For directed graphs, in essense, it should produce a cluster of 1 big community, without modularity. This means that you cannot change the communities as it changes, as modularity dictates the degree of which components can be seperated or reimplemented into a network. It works well on both big and small datasets.
+InfoMap works best with undirected graphs, both simple and multi graphs, and assigns modularity to the nodes. When a community changes, the modularity will be reassigned to the different nodes in a community. 
+
+Examples of bipartite, simple and multi-graph large datasets are found below, which was tested with the InfoMap community detection algorithm.
+```{r}
+#Bipartite graph dataset
+bipartite_info_big <- bipartite_graph %>%
+  convert(to_undirected) %>%
+  mutate(info = group_infomap())
+
+#Big simple graph dataset
+simple_info_big <- simple_graph_large %>%
+  convert(to_undirected) %>%
+  mutate(info = group_infomap())
+
+#Big multi-graph dataset
+multi_info_big <- multi_graph_large %>%
+  convert(to_undirected) %>%
+  mutate(info = group_infomap())
+
+```
+
+## Walktrap Community Detection
+
+**Works on both directed and undirected graphs**
+Walktrap is based on random walks. The idea is taking random walks on a graph, that will stay consistent across communities because there are only a few edges that go out of a community. It works on both directed and undirected graphs (and simple and multi graphs) because of random walks. It was also tested with large and small datasets, and produced consistent results. It basically ignores direction as it uses random walks, and assigns communities to nodes based on the amount of walks a node takes in a network.
+
+Examples of bipartite, simple and multi-graph large datasets are found below, which was tested with the Walktrap community detection algorithm.
+```{r}
+#Bipartite graph dataset
+bipartite_walk_big <- bipartite_graph %>%
+  #convert(to_undirected) %>%
+  mutate(walk = group_walktrap())
+
+#Big simple graph dataset
+simple_walk_big <- simple_graph_large %>%
+  #convert(to_undirected) %>%
+  mutate(walk = group_walktrap())
+
+#Big multi-graph dataset
+multi_walk_big <- multi_graph_large %>%
+  #convert(to_undirected) %>%
+  mutate(walk = group_walktrap())
+
+```
+
+## Fast Greedy Community Detection
+
+**Only works on undirected**
+This algorithm uses a hierarchical approach, but it is bottom-up instead of top-down. It tries to optimize a quality function called modularity in a greedy manner. Initially, every node belongs to a separate community, and communities are merged iteratively such that each merge is locally optimal. The algorithm stops when it is not possible to increase the modularity any more, so it gives you a grouping as well as a dendrogram. The method is fast and only works on undirected graphs, and only on graphs that are simple, without multiple edges. Multi-graphs are not suited, as the algorithm cannot compute modularity for multiple edges.
+
+Examples of bipartite and simple large datasets are found below, which was tested with the FastGreedy community detection algorithm.
+```{r}
+#Bipartite graph dataset
+bipartite_fast_big <- bipartite_graph %>%
+  convert(to_undirected) %>%
+  mutate(fast = group_fast_greedy())
+
+#Big simple graph dataset
+simple_fast_big <- simple_graph_large %>%
+  convert(to_undirected) %>%
+  convert(to_simple) %>%
+  mutate(fast = group_fast_greedy())
+
+```
+
+## Summary 
+
+1 = yes, you can apply this measure in the given context
+
+0 = no, you can't 
+
+`ABC*` = Specific note about that case *see notes under table for more info*
+
+`(-mod)`: If changed to directed, it loses the modularity (separateness and ability to be reassigned) of nodes.
+
+
+***
+# Graph Measurements
+
+## Reciprocity
+
+In measuring graphs,these functions can identify certain characteristics about graphs, when needing numerical values on their connections and structure. 
+
+The first measure we will look at is the reciprocity of the graph. 
+
+The measure of reciprocity defines the proportion of mutual connections, in a directed graph. This is also often explained as the probability that the opposite counterpart of a directed edge is also included in the graph. 
+
+The reciprocity of a directed graph is the proportion of all possible (A, B) pairs which are reciprocal, provided there is at least one edge between A and B. The reciprocity of an empty graph is undefined (results in an error code).
+
+Undirected graphs always have a reciprocity of 1.0 unless they are empty. When this is encountered usuage of convert/morph or to directed can be used to create more confident results.
+
+In the example below, the reciprocity of the graph results in 0.5, in measuring a small simple graph with 10 nodes and 40 edges. The same measurements can be done for all sized graphs, of simple, bipartite and multi-graphs, given that it is a directional graph.
+
+```{r}
+simple_graph_large  %>%
+  mutate(
+    recip = graph_reciprocity()
+    )
+```
+
+In this example, it measures a larger simple graph.
+```{r}
+simple_graph_large %>%
+  mutate(
+    recip = graph_reciprocity()
+    )
+```
+
+This result shows the reciprocity to be 1, beacuse the graph is undirected. In order to use the function, you can use the convert(to_directed) and change the graph to a directed graph, allowing you to checck the reciprocity. 
+```{r}
+multi_graph_small %>%
+  mutate(
+    recip = graph_reciprocity()
+    )
+```
+
+## Clique
+
+Measuring cliques can offer insight into the subsets of graphs. 
+A clique is a subset of vertices of an undirected graph such that every two distinct vertices in the clique are adjacent; that is, its induced subgraph is complete.
+Cliques find all complete subgraphs in the input graph, obeying the size limitations given in the min and max arguments.
+
+
+In the example below, cliques are measured in a directed graph. This means that a warning will appear showing that this is ignored, and the cliques can be meausred regardless. In order to get results without any warning errors, you can convert the graph to an undirected graph, which has been commented into the code, if you wish to see the results when the graph is converted. 
+Cliques can be meaured in all simple, bipartie and multi-graphs.
+```{r}
+simple_graph_small %>%
+  #convert(to_undirected) %>%
+  mutate(
+    cliquecheck = graph_clique_count(min = NULL, max = NULL, subset = NULL)
+    )
+```
+
+The same can be done in this example, where the cliques of a large, simple and directed graph are measured. 
+```{r}
+simple_graph_large %>%
+  #convert(to_undirected) %>%
+  mutate(
+    cliquecheck = graph_clique_count(min = NULL, max = NULL, subset = NULL)
+    )
+
+```
+
+
+## Motif
+
+Graph motifs are small connected subgraphs with a well-defined structure.
+The motifs measurement searches a graph for motifs of a given size and returns a numeric vector containing the number of different motifs. The order of the motifs is defined by their isomorphism class.
+Note that for unconnected subgraphs, which are not considered to be motifs, the result will be NA.
+The size of the motif, currently 3 and 4 are supported only.
+`cut.prob`	is the Numeric vector giving the probabilities that the search graph is cut at a certain level. Its length should be the same as the size of the motif (the size argument). By default no cuts are made.
+
+In the examples below, the function should be graph_motif_count(size = 3, cut.prob = rep(0, size)).
+As already mentioned, 3 and 4 are the only ones supported. 
+The object "size" is not being found, so we take it out in order to get results. 
+
+Here we use the function without size.
+The same can be tested in all simple, bipartite and multi-graphs.
+
+```{r}
+simple_graph_small %>%
+  mutate(
+     motif_list = graph_motif_count(cut.prob = rep(0))
+     )
+```
+
+## Diameter
+
+The diameter measures the length of the longest geodesic in the graph. 
+The function can be explained as "directed" being logical, whether directed or undirected paths are to be considered. This is ignored for undirected graphs.
+
+`unconnected` is also logical, what to do if the graph is unconnected. If FALSE, the function will return a number that is one larger the largest possible diameter, which is always the number of vertices. If TRUE, the diameters of the connected components will be calculated and the largest one will be returned.
+
+`weights` are optional positive weight vector for calculating weighted distances. If the graph has a weight edge attribute, then this is used by default.
+
+This small simple graph returns a diameter value. This works for small and large simple and multigraphs. 
+```{r}
+simple_graph_small %>%
+  mutate(
+    di = graph_diameter(weights = NULL, directed = TRUE, unconnected = TRUE)
+  )
+
+```
+
+The bipartite graph seems to return a value of 1. *we aren't sure why*
+```{r}
+bipartite_graph_small %>%
+  mutate(
+    di = graph_diameter(weights = NULL, directed = TRUE, unconnected = TRUE)
+  )
+```
+
+Same for large and small bipartite. 
+```{r}
+bipartite_graph %>%
+  mutate(
+    di = graph_diameter(weights = NULL, directed = TRUE, unconnected = TRUE)
+  )
+
+```
+
+## Component
+This counts the number of unconnected components in graph. 
+
+In most examples this seems to return a value of 1, as seen in the graph below. This function does work on all simple, bipartite and multigraphs. 
+```{r}
+
+simple_graph_small %>%
+  mutate(
+    comp = graph_component_count(type = "weak")
+  )
+
+```
+
+This multi-graph returns a component value, showing some variation in results. 
+```{r}
+multi_graph_large %>%
+  mutate(
+    comp = graph_component_count(type = "weak")
+  )
+
+```
+
+## Summary 
+
+1 = yes, you can apply this measure in the given context
+
+0 = no, you can't 
+
+`ABC*` = Specific note about that case *see notes under table for more info*
+
+`1*` =  This should would work, but graph may need to be converted to a directed graph
+
+`1**` = if  you measure an  undirected graph the resulted reciprocity will  equal 1. 
+
+`A*` = works when removing “size” from the original function. Gives error that cannot detect size as an object. 
+
+`B*` = runs but gives warning: “edge directions ignored for directed”
+
+
+
+
+
+# Function Index
+A list of all the measures attempted in this tutorial as well as what the specific funtion is call will be listed below. 
+
+Types of Measures:
+
+ * Reciprocity: graph_reciprocity
+ * Clique: graph_clique_count(min = NULL, max = NULL, subset = NULL)
+ * Motif: graph_motif_count(size = 3, cut.prob = rep(0, size))
+ * Diameter: graph_diameter(weights = NULL, directed = TRUE, unconnected = TRUE)
+ * Component: graph_component_count(type = "weak")
+
+Community measurements:
+
+ * Lable_propagation: group_label_prop(weights = NULL, label = NULL, fixed = NULL)
+ * Walktrap: group_walktrap(weights = NULL, steps = 4) 
+ * Louvain: group_louvain(weights = NULL, steps = 4)
+ * Infomap: group_infomap(weights = NULL, node_weights = NULL, trials = 10)
+ * Fast greedy: group_fast_greedy(weights = NULL)
+
+Node Measurements: 
+
+ * Degree: centrality_degree(weights = NULL, mode = "out", loops = TRUE, normalized = FALSE)
+ * Eigenvector: centrality_eigen(weights = NULL, directed = FALSE, scale = TRUE, options = igraph::arpack_defaults)
+ * Page_rank: centrality_pagerank(weights = NULL, directed = TRUE, damping = 0.85, personalized = NULL)
+ * Authorities: centrality_authority(weights = NULL, scale = TRUE,   options = igraph::arpack_defaults)
+ * Hubs: centrality_hub(weights = NULL, scale = TRUE, options = igraph::arpack_defaults)
+ * Closeness:  centrality_closeness(weights = NULL, mode = "out", normalized = FALSE, cutoff = NULL)
+ * Betweenness: centrality_betweenness(weights = NULL, directed = TRUE,   cutoff = NULL, nobigint = TRUE, normalized = FALSE)
+ * Cutpoints: centrality_betweenness(weights = NULL, directed = TRUE,  cutoff = NULL, nobigint = TRUE, normalized = FALSE)
+
+
+
+**We hope this tutorial helped solve some of your problems**
+<div style="width:50%;height:0;padding-bottom:75%;position:relative;"><iframe src="https://giphy.com/embed/XreQmk7ETCak0" width="50%" height="50%" style="position:absolute" frameBorder="0" class="giphy-embed" allowFullScreen></iframe></div><p><a href="https://giphy.com/gifs/retro-thumbs-up-XreQmk7ETCak0">via GIPHY</a></p>
+
+
+
+
+
+

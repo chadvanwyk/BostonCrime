@@ -105,6 +105,24 @@ cpy <- data %>%
   summarize(n())
 cpy
 
+#Crimes per group per district
+cpgpd <- data %>%
+  group_by(DISTRICT, OFFENSE_CODE_GROUP) %>%
+  summarize(n())
+cpgpd
+
+#Graph the above 
+test <- data %>% 
+  group_by(DISTRICT, OFFENSE_CODE_GROUP) %>%
+  filter(DISTRICT %in% c("West Roxbury", "Jamaica Plain", "Roxbury") & OFFENSE_CODE_GROUP %in% c("Manslaughter", "Robbery", "Towed")) %>%
+  summarize(count = n())
+
+
+ggplot(test) + 
+  geom_point(aes(x = DISTRICT, y = OFFENSE_CODE_GROUP, size = count))
+
+  
+
 #Crimes per District per year
 data %>%
   group_by(YEAR, DISTRICT) %>%
@@ -138,6 +156,36 @@ data %>%
   ggplot(aes(x = YEAR, y = count)) +
   geom_line() +
   facet_wrap(~DISTRICT)
+
+
+############# TRYING TO CREATE BINARY NETWORKS ##############
+
+
+data %>%
+  drop_na() %>%
+  group_by(DISTRICT) %>%
+  filter(OFFENSE_CODE_GROUP %in% c("Robbery", "Firearm Violations")) %>%
+  ggplot(aes(x = LAT, y = LONG, color = OFFENSE_CODE_GROUP)) +
+  geom_point() +
+  facet_wrap(~YEAR)
   
+data %>%
+  drop_na() %>%
+  group_by(DISTRICT) %>%
+  filter(YEAR == "2017" & OFFENSE_CODE_GROUP == "Fraud") %>%
+  summarise(count = n())
+
+#Looking for a relationship between Firearm Violations and Robbery
+data %>%
+  drop_na() %>% 
+  group_by(DISTRICT, OFFENSE_CODE_GROUP, YEAR) %>% 
+  filter(OFFENSE_CODE_GROUP %in% c("Robbery", "Firearm Violations")) %>%
+  summarize(count = n()) %>% 
+  ggplot(aes(x = YEAR, y = count, color = OFFENSE_CODE_GROUP)) +
+  geom_line() +
+  facet_wrap(~DISTRICT)
+
+  
+
 
 
