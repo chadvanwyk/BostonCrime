@@ -121,7 +121,6 @@ test <- data %>%
 ggplot(test) + 
   geom_point(aes(x = DISTRICT, y = OFFENSE_CODE_GROUP, size = count))
 
-  
 
 #Crimes per District per year
 data %>%
@@ -157,9 +156,7 @@ data %>%
   geom_line() +
   facet_wrap(~DISTRICT)
 
-
-############# TRYING TO CREATE BINARY NETWORKS ##############
-
+#Some stuff Malcolm and I were doing
 
 data %>%
   drop_na() %>%
@@ -185,7 +182,123 @@ data %>%
   geom_line() +
   facet_wrap(~DISTRICT)
 
+
+################### FINDING CLUSTERS ###################
+
+
+#Data Prep
+Rob_Hyde <- data %>% 
+            na.omit() %>% 
+            filter(DISTRICT == "Hyde Park" & YEAR == "2015" & OFFENSE_CODE_GROUP == "Robbery")
+
+#Trying this day of the week thing
+dow <- c()
+
+for (x in Rob_Hyde$DAY_OF_WEEK) {
+  if (x == "Monday") {
+    dow <- c(dow, 1)
+  } else if (x == "Tuesday") {
+    dow <- c(dow, 2)
+  } else if (x == "Wednesday") {
+    dow <- c(dow, 3)
+  } else if (x == "Thursday") {
+    dow <- c(dow, 4)
+  } else if (x == "Friday") {
+    dow <- c(dow, 5)
+  } else if (x == "Saturday") {
+    dow <- c(dow, 6)
+  } else if (x == "Sunday") {
+    dow <- c(dow, 7)
+  }
+}
+
+Rob_Hyde$DOW <- dow
+
+#K-means
+krd <- Rob_Hyde %>% 
+       select("LAT", "LONG") %>% 
+       kmeans(centers = 2)
+
+#Plot to see clusters 
+plot(Rob_Hyde$LAT, Rob_Hyde$LONG, col = krd$cluster)
+
+#Make a dataframe out of output
+testicle <- data.frame(krd$cluster)
+testicle <- tibble::rowid_to_column(testicle, "ID")
+testicle <- testicle %>% rename(CLUSTER = krd.cluster)
+testicle$VALUE <- 1
+
+library(reshape2)
+net <- dcast(testicle, ID ~ CLUSTER)
+net[is.na(net)] <- 0
+
+#Create graph object
+library(igraph)
+obj <- graph_from_incidence_matrix(net, directed = FALSE, 
+             mode = c("all", "out", "in", "total"),
+             weighted = NULL, add.names = NULL)
+
+plot(obj, vertex.color = "grey75")
+
+
+library(tidygraph)
+net2 <- as_tbl_graph(net)
+plot(net2)
+
+#Trying tibble graphs 
+
+rht <- Rob_Hyde %>% select("DAY_OF_WEEK", "OFFENSE_CODE_GROUP")
+gobj <- as_tbl_graph(rht)
+plot(gobj)
+
+
+##################### TRYING NEW CLUSTER SHIT ######################
+
+#This is lowkey stupid
+day_larc <- data %>% 
+  na.omit() %>%
+  filter(LONG != "-1" & YEAR == "2016" & DISTRICT == "Downtown" & OFFENSE_CODE_GROUP == "Larceny") %>% 
+  #ggplot(aes(x = LAT, y = LONG)) + 
+  #geom_point()
+  select("DOW","OFFENSE_CODE_GROUP")
+
+dow <- c()
+
+for (x in day_larc$DAY_OF_WEEK) {
+  if (x == "Monday") {
+    dow <- c(dow, 1)
+  } else if (x == "Tuesday") {
+    dow <- c(dow, 2)
+  } else if (x == "Wednesday") {
+    dow <- c(dow, 3)
+  } else if (x == "Thursday") {
+    dow <- c(dow, 4)
+  } else if (x == "Friday") {
+    dow <- c(dow, 5)
+  } else if (x == "Saturday") {
+    dow <- c(dow, 6)
+  } else if (x == "Sunday") {
+    dow <- c(dow, 7)
+  }
+}
+
+day_larc$DOW <- dow
+day_larc <- tibble::rowid_to_column(day_larc, "ID")
+day_larc <- day_larc %>% select("ID", "DOW")
+
+day_larc %>% as_tbl_graph(directed = FALSE) %>% plot()
+
+plot(day_larc)
+
+
+##################### TRYING EVEN NEWER STUFF #########################
+
+
+data %>% 
+  na.omit() %>% 
+  filter (DISTRICT %in% c("Downtown", "South End", "Roxbury") & 
+          OFFENSE_CODE_GROUP %in% c("Aggravated Assault", "Robbery") & 
+          YEAR == "2017" & 
+          LAT != "-1" ) 
   
-
-
-
+          
