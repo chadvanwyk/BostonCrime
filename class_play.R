@@ -232,8 +232,14 @@ library(reshape2)
 net <- dcast(testicle, ID ~ CLUSTER)
 net[is.na(net)] <- 0
 
+#Aldu
+adlu <- net %>% gather(key = "cl2", value = "val", 2:3) %>% filter(val != 0) %>% select(-val)
+adlu %>% as_tbl_graph() %>% plot()
+
 #Create graph object
 library(igraph)
+net <- net %>% select("ID", "1")
+
 obj <- graph_from_incidence_matrix(net, directed = FALSE, 
              mode = c("all", "out", "in", "total"),
              weighted = NULL, add.names = NULL)
@@ -242,8 +248,7 @@ plot(obj, vertex.color = "grey75")
 
 
 library(tidygraph)
-net2 <- as_tbl_graph(net)
-plot(net2)
+net %>% as_tbl_graph() %>% plot()
 
 #Trying tibble graphs 
 
@@ -293,12 +298,65 @@ plot(day_larc)
 
 ##################### TRYING EVEN NEWER STUFF #########################
 
+#Data prep
+severe <- data %>% 
+          na.omit() %>% 
+          filter (DISTRICT %in% c("Downtown", "South End", "Roxbury") & 
+                  OFFENSE_CODE_GROUP %in% c("Aggravated Assault", "Robbery") & 
+                  YEAR == "2017" & 
+                  LAT != "-1" ) 
+          #ggplot(aes(x = LAT, y = LONG)) +
+          #geom_point()
 
-data %>% 
-  na.omit() %>% 
-  filter (DISTRICT %in% c("Downtown", "South End", "Roxbury") & 
-          OFFENSE_CODE_GROUP %in% c("Aggravated Assault", "Robbery") & 
-          YEAR == "2017" & 
-          LAT != "-1" ) 
-  
-          
+#Kmeans Clustering
+clust_severe <- severe %>% 
+                 select("LAT", "LONG") %>% 
+                 kmeans(centers = 5)
+
+clust_severe6 <- severe %>% 
+                  select("LAT", "LONG") %>% 
+                  kmeans(centers = 6)
+
+clust_severe7 <- severe %>% 
+                  select("LAT", "LONG") %>% 
+                  kmeans(centers = 7)
+
+#Plot to see clusters 
+plot(severe$LAT, severe$LONG, col = clust_severe$cluster)
+
+#Make dataframe
+sev_dat <- data.frame(Crime = severe$OFFENSE_CODE_GROUP, 
+                      Cluster_5 = clust_severe$cluster, 
+                      Cluster_6 = clust_severe6$cluster,
+                      Cluster_7 = clust_severe7$cluster)
+sev_dat <- tibble::rowid_to_column(sev_dat, "ID")
+
+sev_dat %>% select("Cluster_5", "Cluster_6") %>% as_tbl_graph(directed = FALSE) %>% plot()
+
+#Graph Object 
+obj <- graph_from_incidence_matrix(test, directed = FALSE,
+                                   weighted = T, add.names = NULL)
+plot(obj)
+
+#Create matrix
+count <- 1
+yes <- c()
+for (x in sev_dat$Cluster_5) {
+  if (x == sev_dat$Cluster_6[count]) {
+    yes <- c(yes, 1)
+  } else {
+    yes <- c(yes, 0)
+  }
+  count <- count + 1
+}
+
+sev_dat$Link <- yes
+
+test <- dcast(test, ID ~ Cluster_5)
+test[is.na(test)] <- 0    
+
+obj <- graph_from_incidence_matrix(test, directed = FALSE, 
+                                   mode = c("all", "out", "in", "total"),
+                                   weighted = NULL, add.names = NULL)
+
+plot(obj)
