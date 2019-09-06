@@ -157,7 +157,6 @@ data %>%
   facet_wrap(~DISTRICT)
 
 #Some stuff Malcolm and I were doing
-
 data %>%
   drop_na() %>%
   group_by(DISTRICT) %>%
@@ -259,6 +258,7 @@ plot(gobj)
 
 ##################### TRYING NEW CLUSTER SHIT ######################
 
+
 #This is lowkey stupid
 day_larc <- data %>% 
   na.omit() %>%
@@ -331,13 +331,6 @@ sev_dat <- data.frame(Crime = severe$OFFENSE_CODE_GROUP,
                       Cluster_7 = clust_severe7$cluster)
 sev_dat <- tibble::rowid_to_column(sev_dat, "ID")
 
-sev_dat %>% select("Cluster_5", "Cluster_6") %>% as_tbl_graph(directed = FALSE) %>% plot()
-
-#Graph Object 
-obj <- graph_from_incidence_matrix(test, directed = FALSE,
-                                   weighted = T, add.names = NULL)
-plot(obj)
-
 #Create matrix
 count <- 1
 yes <- c()
@@ -353,10 +346,73 @@ for (x in sev_dat$Cluster_5) {
 sev_dat$Link <- yes
 
 test <- dcast(test, ID ~ Cluster_5)
-test[is.na(test)] <- 0    
+test[is.na(test)] <- 0  
 
-obj <- graph_from_incidence_matrix(test, directed = FALSE, 
-                                   mode = c("all", "out", "in", "total"),
-                                   weighted = NULL, add.names = NULL)
-
+#Graph Object 
+obj <- graph_from_incidence_matrix(test, directed = FALSE,
+                                   weighted = T, add.names = NULL)
 plot(obj)
+
+write_graph(obj, "./object.graphml", format = c("graphml"))
+
+
+######################### SOME NEWER SHIT ########################
+
+#Take stuff out that you want to graph
+#Cast Sparse to spread
+#Graph from incidence matrix
+#Bipartite (fuck with WHICH)
+
+library(tidytext)
+library(ggraph)
+
+#Data prep
+severest <- data %>% 
+            na.omit() %>%
+            filter(UCR_PART == "Part One" &
+            YEAR == "2017" & 
+            LAT != "-1" ) %>% 
+            select("DISTRICT", "UCR_PART") %>% 
+            as_tbl_graph()  
+
+#Bipartite
+bpgraph <- severest %>% 
+           cast_sparse(DISTRICT, UCR_PART) %>%
+           graph_from_incidence_matrix(directed = FALSE) %>% 
+           bipartite_projection(multiplicity = TRUE, which = FALSE) %>% 
+           ggraph("stress") +
+           geom_edge_link(aes(width = weight)) + 
+           geom_node_point(aes(size = deg))
+           
+
+plot(bpgraph)
+
+#Write to dtop
+write_graph(bpgraph, "./bpgraph.graphml", format = c("graphml"))
+  
+
+############################### TOP CRIME PER DISTRICT ##############################
+
+crimes_p_dist <- data %>% 
+                  na.omit() %>% 
+                  filter(LAT != "-1") %>% 
+                  group_by(DISTRICT, YEAR) %>% 
+                  summarise(count = n()) %>% 
+                  ggplot(aes(x = DISTRICT, y = count, fill = DISTRICT)) +
+                  geom_bar(color = "black", stat = "identity") +
+                  geom_text(aes(label = count), vjust = 1.6, color = "white") +
+                  ggtitle("Total Crimes per District") +
+                  xlab("Districts") + 
+                  ylab("Count") +
+                  theme_minimal(base_family = "sans") +
+                  theme(axis.text.x=element_blank(),
+                        axis.ticks.x=element_blank(),
+                        axis.line = element_line(colour = "black")) +
+                  facet_wrap(~YEAR)
+
+
+############################### UCR TYPE PER DISTRICT ##############################
+
+
+              
+  
