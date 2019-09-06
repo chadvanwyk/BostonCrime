@@ -1,0 +1,187 @@
+---
+title: "R Notebook"
+output: html_notebook
+---
+
+```{r}
+pacman::p_load(network, stringr, ggmap,tidytext,ggraph,graphlayouts,dplyr,tidyr,ggplot2,rlist,igraph,tidygraph,tidytext,ggmap,stringr,ggsci,ggthemes,forcats)
+
+register_google(key = "AIzaSyDnfyBmXXH7b8wG0CBPh5FFAZvjEayPilw")
+```
+
+```{r}
+#Load the data and edit inconsistent values and characters. 
+data <- read.csv("./crime.csv", sep = ",", na.strings =c('','NA','na','N/A','n/a','NaN','nan'), strip.white = TRUE, stringsAsFactors = FALSE)
+```
+
+```{r}
+#So there are 326765 NA's where there should be N's, therefore we replace these NA's with N
+
+#Create new list assigning N to empty obs
+new_shooting <- c()
+
+for (x in data$SHOOTING) {
+  if (is.na(x) == TRUE) {
+    new_shooting <- c(new_shooting, 'N')
+  } else {
+    new_shooting <- c(new_shooting, x)
+  }
+}
+
+data$Shooting <- new_shooting
+data$SHOOTING <- NULL
+```
+
+```{r}
+
+#Edited headings to improve consistency
+data <- data %>% rename(SHOOTING = Shooting)
+data <- data %>% rename(LAT = Lat, LONG = Long, LOCATION = Location)
+
+```
+
+```{r}
+
+#Change month numbers (1-12) to January-December:
+data$MONTH <- as.character(data$MONTH)
+data$MONTH[data$MONTH == "1"] <- "January"
+data$MONTH <- as.character(data$MONTH)
+data$MONTH[data$MONTH == "2"] <- "February"
+data$MONTH <- as.character(data$MONTH)
+data$MONTH[data$MONTH == "3"] <- "March"
+data$MONTH <- as.character(data$MONTH)
+data$MONTH[data$MONTH == "4"] <- "April"
+data$MONTH <- as.character(data$MONTH)
+data$MONTH[data$MONTH == "5"] <- "May"
+data$MONTH <- as.character(data$MONTH)
+data$MONTH[data$MONTH == "6"] <- "June"
+data$MONTH <- as.character(data$MONTH)
+data$MONTH[data$MONTH == "7"] <- "July"
+data$MONTH <- as.character(data$MONTH)
+data$MONTH[data$MONTH == "8"] <- "August"
+data$MONTH <- as.character(data$MONTH)
+data$MONTH[data$MONTH == "9"] <- "September"
+data$MONTH <- as.character(data$MONTH)
+data$MONTH[data$MONTH == "10"] <- "October"
+data$MONTH <- as.character(data$MONTH)
+data$MONTH[data$MONTH == "11"] <- "November"
+data$MONTH <- as.character(data$MONTH)
+data$MONTH[data$MONTH == "12"] <- "December"
+
+```
+
+```{r}
+
+dist_names <- c()
+for (x in data$DISTRICT) {
+  if (is.na(x)) {
+    dist_names <- c(dist_names, NA)
+  } else if (x == "A1") {
+    dist_names <- c(dist_names, "Central")
+  } else if (x == "A15") {
+    dist_names <- c(dist_names, "Charlestown")
+  } else if (x == "A7") {
+    dist_names <- c(dist_names, "East_Boston")
+  } else if (x == "B2") {
+    dist_names <- c(dist_names, "Roxbury")
+  } else if (x == "B3") {
+    dist_names <- c(dist_names, "Mattapan")
+  } else if (x == "C6") {
+    dist_names <- c(dist_names, "South_Boston")
+  } else if (x == "C11") {
+    dist_names <- c(dist_names, "Dorchester")
+  } else if (x == "D4") {
+    dist_names <- c(dist_names, "South_End")
+  } else if (x == "D14") {
+    dist_names <- c(dist_names, "Brightdown")
+  } else if (x == "E5") {
+    dist_names <- c(dist_names, "West_Roxbury")
+  } else if (x == "E13") {
+    dist_names <- c(dist_names, "Jamaica_Plain")
+  } else if (x == "E18") {
+    dist_names <- c(dist_names, "Hyde_Park")
+  }
+}
+
+data$DISTRICT <- NULL
+data$DISTRICT <- dist_names
+
+```
+
+Week day Network analysis:
+
+The aim of this network analysis is to link days of the week by serious crime in order to understand which days "share" the most serious crimes.
+Firstly a dataset is constructed from the most serious crimes. The most serious crimes are considered to be all the crimes from "Part One" and "Part Two" under the UCR_PART field.
+
+```{r}
+
+dangerous <- data[data$UCR_PART == "Part One" | data$UCR_PART == "Part Two",]
+dangerous
+
+```
+
+In order to determine which week days are connected by crime, and more specifically, which days have a high similarity in terms of the crimes they share, a bipartite approach is taken. By conducting a bipartite projection with a weight element we can identify the above mentioned. 
+
+The below code consstructs the desired network
+
+```{r}
+
+#which days are connected by crime? - Network
+t1 <- dangerous %>% 
+  select(OFFENSE_CODE_GROUP,DAY_OF_WEEK) %>% 
+  add_count(OFFENSE_CODE_GROUP,DAY_OF_WEEK,"n") %>% 
+  cast_sparse(row= OFFENSE_CODE_GROUP,column = DAY_OF_WEEK,value = n) %>% 
+  graph_from_incidence_matrix(directed = F,weighted = T,add.names = NULL) %>% 
+  bipartite.projection(multiplicity = T,which = TRUE) %>% 
+  as_tbl_graph() %>% 
+  mutate(deg = centrality_degree(),
+         comm = group_louvain()) %>%
+  activate(edges)
+
+```
+
+Plot the graph:
+
+```{r}
+
+t1 %>%
+  ggraph("stress")+
+  geom_edge_link(aes(width = weight))+
+  geom_node_point(aes(color = comm, size = deg))+
+  geom_node_text(aes(label = name))+
+  NULL
+
+```
+
+From the above graph we can deduce that the edge with the most weight connects Friday and Wednesday. This is to say Wednesday and Friday share the most dangerous/serious crimes comepared to any other two days in the week. At this point there is no specfic reason, however a reason could be that the incidents are linked to locations where these days might be conducive for dangerous crimes. In order to the see if this is the case. The incidents linked to the above findings will be plotted and see if there are specific locations linked to these days and their crimes. 
+
+In this part we filter out for the two days in the serious crime data set and then create a table with the days, the crime and the lat/long:
+
+```{r}
+
+fri_wed <- dangerous %>%
+  filter(DAY_OF_WEEK == "Wednesday" | DAY_OF_WEEK == "Friday") %>%
+  data.frame() 
+type <- fri_wed$OFFENSE_CODE_GROUP
+lat <- fri_wed$LAT
+long <-fri_wed$LONG
+
+new <- data.frame(type,lat,long)
+new
+
+```
+
+Next we will plot all of them:
+
+```{r}
+
+map.center <- geocode("Boston, MA")
+Bos_map <- qmap(c(lon=map.center$lon, lat=map.center$lat), zoom=12)
+
+g1 <- Bos_map + geom_point(aes(x=long, y=lat), new, size=3, alpha=0.2, color="red") + 
+  ggtitle("try")
+print(g1)
+
+```
+
+From this we can see that there are no specific locations assocated with the incidents plotted above. This means that location is not a reason for Wednesday and Friday sharing so many serious crimes", the whole of Boston is 

@@ -1,0 +1,363 @@
+---
+title: "Crime Data Netowrk Analysis"
+output: html_notebook
+---
+
+# Network Analysis with Crime Data
+ 
+# Introduction
+
+Network analysis has become an increasingly popular tool used by network analysts to manage and understand the complex interrelationships between actors/nodes of a network. There are numerous applications designed for network analysis and the creation of network graphs. R has developed into one of the most powerful network analysis tools due to its ability to easily manipulate data and its growing range of packages that are now being specifically designed for network analysis. This study makes use of the Boston crime dataset from 2015 to 2018. 
+
+Network analysis is becoming increasingly important in the study of criminal networks. By applying network analysis to crime data, police are able to be proactive and not only reactive with regards to criminal activities. This is because network analysis enables police to better detect, reduce, and disrupt the criminal activities of gangs and other networks. Adding onto this, it also allows police to be both tactical and strategic with planned operations and threat assessment for upcoming major events. 
+
+The objective of this study is to illustrate the application of network analysis with R, using the Boston crime dataset. The study is structured as follows:
+
+•	Section A: Data Cleaning
+•	Section B: Basic Analysis 
+•	Section C: Network Analysis
+
+#Section A: Data Cleaning
+
+```{r}
+#Load packages 
+
+pacman::p_load(network, stringr, ggmap,tidytext,ggraph,graphlayouts,dplyr,tidyr,ggplot2,rlist,igraph,tidygraph,tidytext,ggmap,stringr,ggsci,ggthemes,forcats)
+
+register_google(key = "")
+```
+
+Upon loading the crime data, it became evident that the data required cleaning due to the following observations:
+
+•Inconsistent values and characters.
+•The data had 326765 NA values within the ‘shooting’ column, where these values should have been labeled as ‘No’ (No shooting took place). 
+•	Inconsistent labelling of headings.
+•	Month names as numbers.
+•	District names as numbers. 
+
+The following section exhibits the code used to clean the data to make it more readable:
+
+``` {r}
+
+#Load the data and edit inconsistent values and characters. 
+data <- read.csv("./crime.csv", sep = ",", na.strings =c('','NA','na','N/A','n/a','NaN','nan'), strip.white = TRUE, stringsAsFactors = FALSE)
+
+#Change NA values to 'N' in shooting column 
+#The shooting column
+count <- 0
+for (x in data$SHOOTING) {
+  if (is.na(x) == TRUE) {
+    count = count + 1
+  }
+}
+#So there are 326765 NA's where there should be N's, therefore we replace these NA's with N
+
+#Create new list assigning N to empty obs
+new_shooting <- c()
+
+for (x in data$SHOOTING) {
+  if (is.na(x) == TRUE) {
+    new_shooting <- c(new_shooting, 'N')
+  } else {
+    new_shooting <- c(new_shooting, x)
+  }
+}
+
+data$Shooting <- new_shooting
+data$SHOOTING <- NULL
+
+#Edited headings to improve consistency
+data <- data %>% rename(SHOOTING = Shooting)
+data <- data %>% rename(LAT = Lat, LONG = Long, LOCATION = Location)
+
+#Change month numbers (1-12) to January-December:
+data$MONTH <- as.character(data$MONTH)
+data$MONTH[data$MONTH == "1"] <- "January"
+data$MONTH <- as.character(data$MONTH)
+data$MONTH[data$MONTH == "2"] <- "February"
+data$MONTH <- as.character(data$MONTH)
+data$MONTH[data$MONTH == "3"] <- "March"
+data$MONTH <- as.character(data$MONTH)
+data$MONTH[data$MONTH == "4"] <- "April"
+data$MONTH <- as.character(data$MONTH)
+data$MONTH[data$MONTH == "5"] <- "May"
+data$MONTH <- as.character(data$MONTH)
+data$MONTH[data$MONTH == "6"] <- "June"
+data$MONTH <- as.character(data$MONTH)
+data$MONTH[data$MONTH == "7"] <- "July"
+data$MONTH <- as.character(data$MONTH)
+data$MONTH[data$MONTH == "8"] <- "August"
+data$MONTH <- as.character(data$MONTH)
+data$MONTH[data$MONTH == "9"] <- "September"
+data$MONTH <- as.character(data$MONTH)
+data$MONTH[data$MONTH == "10"] <- "October"
+data$MONTH <- as.character(data$MONTH)
+data$MONTH[data$MONTH == "11"] <- "November"
+data$MONTH <- as.character(data$MONTH)
+data$MONTH[data$MONTH == "12"] <- "December"
+
+```
+
+The following figure was used to change the district numbers to district names to make the data easier to interpret: 
+![Boston Districts](./BostonDistricts.jpg)
+
+``` {r}
+
+#Change district numbers to names
+dist_names <- c()
+for (x in data$DISTRICT) {
+  if (is.na(x)) {
+    dist_names <- c(dist_names, NA)
+  } else if (x == "A1") {
+    dist_names <- c(dist_names, "Central")
+  } else if (x == "A15") {
+    dist_names <- c(dist_names, "Charlestown")
+  } else if (x == "A7") {
+    dist_names <- c(dist_names, "East_Boston")
+  } else if (x == "B2") {
+    dist_names <- c(dist_names, "Roxbury")
+  } else if (x == "B3") {
+    dist_names <- c(dist_names, "Mattapan")
+  } else if (x == "C6") {
+    dist_names <- c(dist_names, "South_Boston")
+  } else if (x == "C11") {
+    dist_names <- c(dist_names, "Dorchester")
+  } else if (x == "D4") {
+    dist_names <- c(dist_names, "South_End")
+  } else if (x == "D14") {
+    dist_names <- c(dist_names, "Brightdown")
+  } else if (x == "E5") {
+    dist_names <- c(dist_names, "West_Roxbury")
+  } else if (x == "E13") {
+    dist_names <- c(dist_names, "Jamaica_Plain")
+  } else if (x == "E18") {
+    dist_names <- c(dist_names, "Hyde_Park")
+  }
+}
+
+data$DISTRICT <- NULL
+data$DISTRICT <- dist_names
+
+```
+
+The following table exhibits the first 6 rows of the clean data:
+``` {r}
+
+head(data)
+
+```
+
+#Section B: Basic Analysis 
+
+By simply looking at the cleaned data table we can already see that this dataset consists of 17 columns, all of which are attributes of crime incidents that took place in Boston. Majority of the attributes are self-explanatory, such as where and when the incident occurred and a short description of the offense. 
+The 'OFFENSE_CODE_GROUP' column represents the offence catagories under which incidents can be grouped. For example, possession of heroin and possession of cocaine are both grouped beneath 'Drug violation'. Adding onto this, the 'UCR_PART' column indicates severity levels of the crimes, 'Part one' being the most severe and 'Part three' being the least severe. 
+
+The objective of this section is to acquire a deeper understanding of the dataset through the application of various analyses:
+
+•	Crime year analyses. 
+•	Crime incident analysis. 
+•	Offense group analysis. 
+•	Relational analysis. 
+
+Crime Year Analyses 
+The basic analysis was initialised by investigating observations in relation to the 'YEAR' column. The first graph depicts the amount of crimes per year and from this we can infer that crime was increasing from 2015 to 2017 and then decrease between 2017 and 2018. From the graph, we can also see that 2017 has the highest amount of incidents, while 2015 has the lowest amount of incidents. However, we were interested to see what these crimes consisted of. 
+```{r}
+#Calculate the amount of crimes per year
+crime_per_year <- data %>%
+  select(OFFENSE_CODE_GROUP,YEAR) %>% 
+  add_count(YEAR,OFFENSE_CODE_GROUP)  %>% 
+  distinct() %>% 
+  group_by(YEAR) %>% 
+  top_n(10)
+
+#Number of crimes per year
+no_crimes <- ggplot(data, aes(YEAR)) +
+  geom_bar(fill = "#0073C2FF") +
+  ggtitle("Crimes Per Year") +
+  theme_tufte(base_family = "sans") +
+  scale_fill_futurama() +
+  xlab("YEAR") +
+  ylab("AMOUNT OF CRIMES") 
+no_crimes
+  
+```
+As a result, the following graph depicts the top 9 most frequentley enacted crimes for each year. By looking at this graph we can see that throughout all of the years, crimes associated with 'Motor vehicle accident response' are the most frequently enacted. We can also see that the second highest enacted offense is crimes to do with larceny, while the lowest was crimes related towed. Although this data is insightful, for the purpose of this study we are more interested in possible relationships between crimes, therefore, graphs similar to this would be more helpful at a district level rather than a global level.  
+```{r}
+
+#Top 9 crimes 
+crime_per_year %>% 
+  filter(OFFENSE_CODE_GROUP != "Other") %>% 
+  ggplot()+
+  aes(x = YEAR, y = n, fill = fct_reorder(OFFENSE_CODE_GROUP,n)) +
+  geom_col(position = "dodge2")+ggtitle("Most Frequent Crimes from 2015-2018")+
+  labs(fill = "Crimes") +
+  scale_fill_futurama()+
+  theme_tufte(base_family = "sans") +
+  xlab("YEAR") + 
+  ylab("AMOUNT OF CRIMES")
+```
+As a result, we decided to focus our attention to the different groupings of crimes under the UCR_PART column. As mentioned before, this column groups crimes according to their level of severity. The following code exhibits which crimes are grouped within each 'part'. 
+
+``` {r} 
+#Part One
+part_one <- data %>% 
+  filter(UCR_PART == "Part One") %>% 
+  select(UCR_PART, OFFENSE_CODE_GROUP) %>% 
+  distinct(OFFENSE_CODE_GROUP, .keep_all = T) 
+part_one
+
+#Part Two
+part_two <- data %>% 
+  filter(UCR_PART == "Part Two") %>% 
+  select(UCR_PART, OFFENSE_CODE_GROUP) %>% 
+  distinct(OFFENSE_CODE_GROUP, .keep_all = T) 
+part_two
+
+#Part Three
+part_three <- data %>% 
+  filter(UCR_PART == "Part Three") %>% 
+  select(UCR_PART, OFFENSE_CODE_GROUP) %>% 
+  distinct(OFFENSE_CODE_GROUP, .keep_all = T) 
+part_three
+
+```
+``` {r}
+data %>% 
+  select(LOCATION,OFFENSE_DESCRIPTION) %>% 
+  group_by(LOCATION, OFFENSE_DESCRIPTION) %>% 
+  distinct()
+```
+By looking at the tables above, we can see that 'paMrt 1' consists of the most severe/dangerous crimes. Therefore, we can infer that the districts with the highest rate of 'part 1' crimes are the most dangerous districts. The following code exhibits a graph depicting the frequency of part 1, part 2 and part 3 crimes per district.  
+``` {r}
+
+data <- na.omit(data)
+
+parts_per_district <- data %>%
+  select(UCR_PART,DISTRICT) %>% 
+  add_count(DISTRICT,UCR_PART)  %>% 
+  distinct() %>% 
+  group_by(DISTRICT) %>% 
+  top_n(10)
+
+#plot in a graph scatter plot
+parts_per_district %>% 
+  filter(UCR_PART != "Other") %>% 
+  ggplot()+
+  aes(x = DISTRICT, y = n, fill = fct_reorder(UCR_PART,n)) +
+  geom_col(position = "dodge2")+ggtitle("Crime Severity Per District")+
+  labs(fill = "Crimes") +
+  scale_fill_jama()+
+  theme_tufte(base_family = "sans") +
+  xlab("DISTRICT") + 
+  ylab("AMOUNT OF CRIMES PER 'PART'")+ 
+  theme(axis.text.x = element_text(angle = 90, hjust = 1))
+
+```
+By analysing the graph we can see that South_End, Central and Roxbury have the highest amount of part 1 crimes and therefore, they are the mot dangerous districts. Adding onto this, if we look at the map, interestingly, these three districts are adjacent to one another. Therefore, we could make the hypothesis that there is a relationship between the various crimes within this area. As a result, the majority of the remainder of our basic analysis will focus on these three districts. 
+
+for example- density graph of most frequently enacted part 1 crime in south end to show how the crime spawns
+correlation graph of the three districts
+
+****************************************************************** 
+
+#Section C: Network Analysis
+
+As a result of the basic analysis, we now have a deeper understanding of the Boston crime dataset which will aid us throughout the network analysis of this study. This section involves the formation of networks to investigate complex relationships amongst nodes and to deduce interesting information that goes beyond the immediate scope of the data.
+
+To begin analysis of the networks it was important for us to understand what is, and what is not, connected within the dataset. As a result, the following connections are observed: individual offenses are commited on certain days, at certain times and at specific locations. This means that we are able to link offenses by days, times and locations (either using latitude and longitude or districts). 
+The first analysis we were most interested in was the relationship between districts, as a result, we produced the following matrix:
+
+``` {r}
+
+#Matrix showing the relationship between districts and time.
+net1 <- data %>% 
+  select(OFFENSE_CODE_GROUP,DISTRICT) %>% 
+  add_count(OFFENSE_CODE_GROUP,DISTRICT,"n") %>% 
+  cast_sparse(row= OFFENSE_CODE_GROUP,column = DISTRICT,value = n) 
+net1
+```
+Within this matrix, the columns are 'DISTRICTS' and the rows are 'OFFENSE_GROUP_CODE'. The values within the matrix are the count of 'DISTRICT' and 'OFFENCE_GROUP_CODE', therefore, these values represent the amount of times that the individual offenses occured within each district. For example, if we look at row one and colun 1 we can see that 81 incidents of 'Disordely Conduct' occurred in Hyde Park. The next step was to construct a network using this matrix: 
+``` {r}
+
+#network showing relationship between offenses and districts
+net1 <- net1 %>% 
+  graph_from_incidence_matrix(directed = F,weighted = T,add.names = NULL) %>% 
+  bipartite.projection(multiplicity = T,which = T) %>% 
+  as_tbl_graph() %>% 
+  mutate(deg = centrality_degree(),
+         comm = group_louvain()) %>%
+  activate(edges) %>% 
+  convert(to_subgraph,weight> median(weight)) %>%
+  as_tbl_graph() %>%
+  ggraph("stress") +
+  geom_edge_fan(aes(width = weight)) +
+  geom_node_point(aes(color = as.factor(comm), size = deg))+
+  geom_node_text(aes(label = name)) +
+  NULL
+net1
+```
+By analysing the network above we can see that the nodes are the columns of the matrix (DISTRICT) and the edges are the rows of the matrix (OFFENSE_CODE_GROUP). A link is made between two nodes when they both share an instance of the same crime. We include 'weight' to the edges so that we can deduce which districts share the most number of crimes. Therefore, the nodes which are linked by edges, that possess a heavy weight, share more instances of common crimes. For example, Roxbury and Dorchester share a more heavily weighted edge compared to Brightdown and Roxbury meaning that Roxbury and Dorchester have more common instance of crime than Brightdown and Roxbury. For police, this information is useful because it tells us that Dorchester and Roxbury porbably have similar problems and therefore, successful efforts to reduce crime in one district could potentially work in the other. Adding onto this, another interesting observation is that all of the districts which are linked by edges with heavy wightings are also located adjacent to eachother on the map of Boston. 
+
+Through furthur analysis of this graph it is also evident that Charlestown and West Roxbury are not at all connected to the network, this is because we made a subgraph of the originial network, removing any edges that do not have a weight that is larger than the median edge weight. Therefore, West Roxbury and Charlestown have the smallest amount of common instances of crime with all other districts. From the basic analysis, we know that CharlesTown has the lowest crime rate and therefore we can assume that there are simply not enough crime instances to connect with other districts, however, this is not the case for West Roxbury. Therefore, West Roxbury has crime instantces which are not common to other districts and this could mean that the police in this district may be faced with unique challenges.
+
+There are two other factors to acknowledge about this network and that is the degree of centrality and community detection. We sized the nodes by their degree and, as we can observe, all the nodes have the same degree of 11. The degree of centrality is the count of the total number of connections linked to a node. Due to the fact that there are 12 nodes and all of them have a degree of 11, we can conclude that all of the nodes are connected and therefore, no nodes are more central than other nodes. This also means that all of the districts share common instances of crime with all of the other districts. Adding onto this, because all of the nodes are connected, louvain's community detection function only discovered one community. 
+
+Due to the fact that all of the nodes are connected we were limited in the amount of information we could extract from the relations between the nodes. As a result, we wanted to create a new network, which still deals with crime and location, but ensures that not all of the nodes form one community. To do this, we decided to make a matrix, still using 'OFFENSE CODE DESCRIPTION' but rather connecting them with 'LOCATION'. This is because the locations of crime incidents are much more unique than districts and it is not possibile that all of the offenses happened at the same specific locations throughout Boston. Adding onto this, we also switched the matrix around so that 'OFFENSE CODE DESCRIPTION' is now the column and the locations are the rows: 
+
+``` {r}
+
+#Create offense and location matrix
+net2 <- data %>%
+  select(OFFENSE_CODE_GROUP,LOCATION) %>% 
+  add_count(OFFENSE_CODE_GROUP,LOCATION,"n") %>% 
+  cast_sparse(row= LOCATION,column = OFFENSE_CODE_GROUP,value = n)
+
+#Create network of offenses linked by location
+net2 <- net2 %>%
+  graph_from_incidence_matrix(directed = F, weighted = T, add.names = NULL) %>%
+  bipartite.projection(multiplicity = T,which = T) %>%
+  as_tbl_graph() %>% 
+  mutate(deg = centrality_degree(),
+         between = centrality_betweenness(),
+         cl = centrality_closeness(),
+         pgr = centrality_pagerank(), 
+         eign = centrality_eigen(), 
+         comm = group_louvain()) %>%
+  activate(edges) %>%
+  as_tbl_graph()
+
+#convert graph to file to export to gephi
+write.graph(net2, "~/Desktop/Network2.graphml", format=c("graphml"))
+
+net2 <- net2 %>% 
+  ggraph("mds") +
+  geom_edge_fan(aes(width = weight)) +
+  geom_node_point(aes(color = as.factor(comm), size = deg)) +
+  geom_node_text(aes(label = name)) +
+  NULL
+net2
+``` 
+![Network2](./Network2.jpg)
+
+The above network was created through R and using Gephi.The reason we decided to use gephi is purely due to the immense size of the network and for readibility purposes. By analysing the network we can see that the crimes are nodes and the locations (which are made up of latitude and longitude) are the edges. Therefore, nodes are connected if they share the same location. As a result, the crimes which are linked by an edge with a heavy weighting share multiple locations in common. This graph shows us how crimes, that are located in similar areas, are realted.
+
+Due to the fact that not all of the nodes are connected we are now able to infer alot more information from the network. Firstly, the nodes have been sized by the level of their degree centrality, therefore, nodes which are bigger have a higher degree, more links and are more central withing the network than other nodes. For example, Larceny has a degree of 62 while biological threat has a degree of 25 which means that Larceny has much more connections and is more central within the network than biological threat. This is obvious because larceny was commited many more times than a biological threat and therfroe, larceny will have many more locations and many more links. This leads us to betweeness centrality which is the number of times that a node acts as a bride along the shortest path between two other nodes. This means that it is another measure of centrality where a node with a high value has more influence within a network than a node with a low value. For example, Disorderly Conduct has a betweeness centrality of 4.8 and Biological threat has a betweeness centrality of 479.0. This means that Biological threat acts as a bridge between along the shortest path between many more nodes than Disorderly conduct. This is interesting because Biological threat also has one of the smallest degrees yet it holds some of the strongest influce over the entire network with regards to betweeness centrality. The reason for this is becasue biological threat only has a few locations and therefore, other crimes will have edges that will pass through these locations many times. 
+
+The last interesting analysis we can make is in relation to comunity detection. As one can see, the louvain comunity detection function has identified 3 different communities. Louvain identifies communities by first finding small communities and optimizing modularity locally on all nodes, then each small community is grouped into one node and the first step is repeated. Modularity is the measure of the structure of networks. A network with high modularity has dense connections btween nodes within communities and sparse connections between nodes in different communities. However, this network does not have a high modularity and therefrore, it has sparse connections between nodes within communities and dense connections between nodes in different communities. An example of one of the communities is community 3 which consists of restraining order violation, missing person reported, ballistics, missing person located, licence plate related incidents, firearm discovery, offense against child/family, criminal harrassment and explosives. By looking at this community it is interesting because it seems that many of these incidents could infact be related such as missing person reported and missing person located, as well as, ballistics and firearm discovery and criminal harrassment and restraining order violation. Therefore, police could greatly benefit from a network such as this because they would be able to see which crimes are connected to eachother within communities which could lead to a deeper understanding of the interconnectedness of criminal offenses. 
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
