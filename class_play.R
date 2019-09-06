@@ -411,8 +411,41 @@ crimes_p_dist <- data %>%
                   facet_wrap(~YEAR)
 
 
-############################### UCR TYPE PER DISTRICT ##############################
+############################### WHAT IS THE MOST DANGEROUS HOUR ##############################
+
+data %>% 
+  na.omit() %>% 
+  filter(LAT != "-1") %>% 
+  group_by(DAY_OF_WEEK, HOUR) %>% 
+  summarise(count = n()) %>% 
+  ggplot(aes(x = HOUR, y = count)) +
+  geom_segment(aes(x = HOUR, xend = HOUR, y = 0, yend = count), color = "skyblue") +
+  geom_point(color = "blue", size = 4) +
+  ggtitle("Crimes per Hour") +
+  xlab("Hour") + 
+  ylab("Count") +
+  theme_light(base_family = "sans") +
+  theme(panel.grid.major.x = element_blank(),
+        panel.border = element_blank(),
+        axis.ticks.x = element_blank()) +
+  facet_wrap(~DAY_OF_WEEK)
 
 
-              
-  
+######################## TOTAL CRIMES PER WEEK #######################
+
+crime_per_day <- data %>%
+  group_by(DAY_OF_WEEK, OFFENSE_CODE_GROUP) %>% 
+  add_count(OFFENSE_CODE_GROUP,DAY_OF_WEEK) %>%
+  summarize(n = sum(n))
+
+crime_per_day %>% 
+  filter(n > 2500)%>%
+  ggplot()+
+  aes(x = DAY_OF_WEEK, y = n) +
+  geom_col(position = "dodge2")+ggtitle("Total Number of Crimes per Week Day")+
+  labs(fill = "DAY_OF_WEEK") +
+  scale_fill_futurama()+
+  theme_tufte(base_family = "sans") +
+  xlab("Week Day") + 
+  ylab("Number of Crimes")+ 
+  theme(axis.text.x = element_text(angle = 90, hjust = 1), legend.position = "bottom")
